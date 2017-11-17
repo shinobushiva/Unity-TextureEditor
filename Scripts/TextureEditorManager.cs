@@ -3,27 +3,34 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.UI;
 using DataSaveLoad;
-using Shiva.CameraSwitch;
 using System;
 using System.IO;
 using SFB;
 
 // This uses UnityStandaloneFileBrowser
 // https://github.com/gkngkc/UnityStandaloneFileBrowser
-namespace TextureEditor {
+namespace Shiva.TextureEditor {
 	public class TextureEditorManager : MonoBehaviour {
 
 		public string folderName = "TextureEditor";
 		public string textureFolder = "TextureEditor/Textures";
 
-		public CameraSwitcher cameraSwitcher;
 
 		public DataSaveLoadMaster dataSaveLoad;
 
 		public GameObject texturePrefab;
 		public RectTransform scrollContent;
 
-		public TextureEntry currentTextureEntry;
+		private TextureEntry currentTextureEntry;
+
+		private ConfirmDialogUI dialog;
+
+
+		private MeshRenderer pointedRenderer;
+		private Texture orgTexture;
+		private bool applying = false;
+
+		public bool targetSharedMaterial = false;
 
 
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -33,11 +40,7 @@ namespace TextureEditor {
 		public void OpenLoadTextureDialog(){
 
 			string folder = dataSaveLoad.GetFolderPath (textureFolder);
-			if (! new FileInfo (folder).Exists ) {
-				DirectoryInfo fi = Directory.CreateDirectory (folder);
-				print ("Created : " + fi.FullName);
-			}
-			
+
 			string[] paths = StandaloneFileBrowser.OpenFilePanel(
 					"Selecte Textures", "", "png, jpg", true);
 
@@ -80,9 +83,72 @@ namespace TextureEditor {
 			dataSaveLoad = FindObjectOfType<DataSaveLoadMaster> ();
 		}
 
+
 		// Update is called once per frame
 		void Update () {
+			if (currentTextureEntry != null && !applying) {
+				RaycastHit hit;
+				Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+				if (Physics.Raycast (ray, out hit, 100)) {
+					MeshRenderer r = hit.transform.GetComponent<MeshRenderer> ();
+
+					if (pointedRenderer != r) {
+						if (pointedRenderer != null) {
+							if (targetSharedMaterial) {
+								pointedRenderer.sharedMaterial.mainTexture = orgTexture;
+							} else {
+								pointedRenderer.material.mainTexture = orgTexture;
+							}
+							pointedRenderer = null;
+						}
+						pointedRenderer = r;
+
+						if (targetSharedMaterial) {
+							orgTexture = r.sharedMaterial.mainTexture;
+							r.sharedMaterial.mainTexture = currentTextureEntry.rawImage.texture;
+						} else {
+							orgTexture = r.material.mainTexture;
+							r.material.mainTexture = currentTextureEntry.rawImage.texture;
+						}
+					}
+				} else if (pointedRenderer != null) {
+
+					if (targetSharedMaterial) {
+						pointedRenderer.sharedMaterial.mainTexture = orgTexture;
+					} else {
+						pointedRenderer.material.mainTexture = orgTexture;
+					}
+					pointedRenderer = null;
+				}
+			}
+
+			if (Input.GetMouseButtonDown (0)) {
+				if (pointedRenderer != null) {
+					applying = true;
+					dialog.Show("Apply this texture?", "Are you applying this texture?",
+						"Apply", "Cancel", (x)=>{
+							if(x){
+								print("Approve");
+								EditedTexture et = pointedRenderer.gameObject.AddComponent<EditedTexture>();
+								if (targetSharedMaterial) {
+									et.Set(pointedRenderer.sharedMaterial.mainTexture);
+								}else{
+									et.Set(pointedRenderer.material.mainTexture);
+								}
+								pointedRenderer = null;
+
+								applying = false;
+							} else {
+								print("Cancel");
+								applying = false;
+							}
+						});
+				}
+			}
 			
+		}
+
+		void UnApplying(){
 		}
 
 		// Use this for initialization
@@ -91,8 +157,16 @@ namespace TextureEditor {
 		}
 
 		void Start () {
-			dataSaveLoad.AddHandler(DataLoadCallback, typeof(SavedCamera));
 
+			dialog = FindObjectOfType<ConfirmDialogUI> ();
+
+			string folder = dataSaveLoad.GetFolderPath (textureFolder);
+			if (! new FileInfo (folder).Exists ) {
+				DirectoryInfo fi = Directory.CreateDirectory (folder);
+				print ("Created : " + fi.FullName);
+			}
+
+			//			dataSaveLoad.AddHandler(DataLoadCallback, typeof(SavedCamera));
 			UpdateTextures ();
 		}
 
@@ -147,13 +221,13 @@ namespace TextureEditor {
 
 		public void DataLoadCallback(object o){
 
-			SavedCamera sc = o as SavedCamera;
-
-			if (sc.cameraName == cameraSwitcher.CurrentActive.c.name) {
-				cameraSwitcher.CurrentActive.transform.position = sc.position;
-				cameraSwitcher.CurrentActive.transform.rotation = sc.rotation;
-				cameraSwitcher.CurrentActive.transform.localScale = sc.localScale;
-			}
+//			SavedCamera sc = o as SavedCamera;
+//
+//			if (sc.cameraName == cameraSwitcher.CurrentActive.c.name) {
+//				cameraSwitcher.CurrentActive.transform.position = sc.position;
+//				cameraSwitcher.CurrentActive.transform.rotation = sc.rotation;
+//				cameraSwitcher.CurrentActive.transform.localScale = sc.localScale;
+//			}
 		}
 
 
@@ -163,13 +237,13 @@ namespace TextureEditor {
 		}
 
 		public void ShowSaveUI(){
-			SavedCamera sc = new SavedCamera ();
-			sc.cameraName = cameraSwitcher.CurrentActive.c.name;
-			sc.position = cameraSwitcher.CurrentActive.transform.position;
-			sc.rotation = cameraSwitcher.CurrentActive.transform.rotation;
-			sc.localScale = cameraSwitcher.CurrentActive.transform.localScale;
-
-			dataSaveLoad.ShowSaveDialog (sc, folderName);
+//			SavedCamera sc = new SavedCamera ();
+//			sc.cameraName = cameraSwitcher.CurrentActive.c.name;
+//			sc.position = cameraSwitcher.CurrentActive.transform.position;
+//			sc.rotation = cameraSwitcher.CurrentActive.transform.rotation;
+//			sc.localScale = cameraSwitcher.CurrentActive.transform.localScale;
+//
+//			dataSaveLoad.ShowSaveDialog (sc, folderName);
 		}
 
 		public void ShowLoadUI(){

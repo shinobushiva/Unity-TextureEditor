@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System;
 
-namespace TextureEditor {
+namespace Shiva.TextureEditor {
 	public class TextureEntry : MonoBehaviour {
 
 
