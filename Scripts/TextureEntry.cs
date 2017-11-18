@@ -19,7 +19,9 @@ namespace Shiva.TextureEditor {
 			}
 			set {
 				texturePath = value;
-				StartCoroutine (Routine (this, texturePath));
+				if (texturePath != null) {
+					GlobalCoroutine.Go(Routine (this, texturePath));
+				}
 			}
 		}
 
@@ -32,30 +34,39 @@ namespace Shiva.TextureEditor {
 			set {
 				texture = value;
 				rawImage.texture = value;
+				rawImage.color = Color.white;
 			}
 		}
 
 		private IEnumerator Routine(TextureEntry te, string filepath) {
+
+			print ("Set Texture Routine");
+			
 			string uri = new Uri(filepath).AbsoluteUri;
 			var loader = new WWW(uri);
 			yield return loader;
+			print ("Set Texture");
 			te.Texture = loader.texture;
+		}
+
+		public void SetTextureTo(Material mat, Texture org){
+			if (texture != null) {
+				mat.mainTexture = rawImage.texture;
+			} else {
+				mat.mainTexture = org;
+			}
 		}
 
 
 		void Reset(){
-			rawImage = GetComponentInChildren<RawImage> ();
-			GetComponentInChildren<Text> ().text = "";
+			rawImage = GetComponentInChildren<RawImage> (true);
+			GetComponentInChildren<Text> (true).text = "";
 		}
 
 		// Use this for initialization
 		void Start () {
-			
+			Reset ();
 		}
-		
-		// Update is called once per frame
-		void Update () {
-			
-		}
+
 	}
 }

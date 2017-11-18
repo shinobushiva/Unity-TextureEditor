@@ -6,6 +6,7 @@ using DataSaveLoad;
 using System;
 using System.IO;
 using SFB;
+using UnityEngine.EventSystems;
 
 // This uses UnityStandaloneFileBrowser
 // https://github.com/gkngkc/UnityStandaloneFileBrowser
@@ -14,23 +15,21 @@ namespace Shiva.TextureEditor {
 
 		public string folderName = "TextureEditor";
 		public string textureFolder = "TextureEditor/Textures";
-
+		public bool targetSharedMaterial = false;
 
 		public DataSaveLoadMaster dataSaveLoad;
+		private ConfirmDialogUI dialog;
 
 		public GameObject texturePrefab;
 		public RectTransform scrollContent;
 
 		private TextureEntry currentTextureEntry;
 
-		private ConfirmDialogUI dialog;
-
-
 		private MeshRenderer pointedRenderer;
-		private Texture orgTexture;
-		private bool applying = false;
+		private Dictionary<Material, Texture> orgTextureMap = new Dictionary<Material, Texture>();
+//		private Dictionary<Material, EditedTexture> matEditedMap = new Dictionary<Material, EditedTexture>();
 
-		public bool targetSharedMaterial = false;
+		private bool applying = false;
 
 
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -42,7 +41,7 @@ namespace Shiva.TextureEditor {
 			string folder = dataSaveLoad.GetFolderPath (textureFolder);
 
 			string[] paths = StandaloneFileBrowser.OpenFilePanel(
-					"Selecte Textures", "", "png, jpg", true);
+					"Selecte Textures", "", "", true);
 
 			foreach (string p in paths) {
 
@@ -68,84 +67,99 @@ namespace Shiva.TextureEditor {
 		}
 #endif
 
-		[System.Serializable] 
-		public class SavedCamera
-		{
-			public string name;
-			public string cameraName;
-			public Vector3 position;
-			public Quaternion rotation;
-			public Vector3 localScale;
-			public string createdDate;
-		}
-
 		void Reset(){
 			dataSaveLoad = FindObjectOfType<DataSaveLoadMaster> ();
+		}
+
+		private void ResetTexture(){
+			if (pointedRenderer == null)
+				return;
+			
+			Material mat = targetSharedMaterial ? pointedRenderer.sharedMaterial : pointedRenderer.material;
+			EditedTexture et = pointedRenderer.GetComponent<EditedTexture> ();
+			if (et) {
+				et.SetTextureTo (mat);
+			} else if (orgTextureMap.ContainsKey (mat)) {
+				mat.mainTexture = orgTextureMap [mat];
+			}
+
+			pointedRenderer = null;
 		}
 
 
 		// Update is called once per frame
 		void Update () {
-			if (currentTextureEntry != null && !applying) {
+			if (applying)
+				return;
+
+			if (EventSystem.current.IsPointerOverGameObject ()) {
+				ResetTexture ();
+				return;
+			}
+
+			if (currentTextureEntry != null) {
 				RaycastHit hit;
 				Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
 				if (Physics.Raycast (ray, out hit, 100)) {
 					MeshRenderer r = hit.transform.GetComponent<MeshRenderer> ();
+					if (r == null) {
+						ResetTexture ();
+						return;
+					}
+						
 
 					if (pointedRenderer != r) {
 						if (pointedRenderer != null) {
-							if (targetSharedMaterial) {
-								pointedRenderer.sharedMaterial.mainTexture = orgTexture;
-							} else {
-								pointedRenderer.material.mainTexture = orgTexture;
-							}
-							pointedRenderer = null;
+							ResetTexture ();
 						}
 						pointedRenderer = r;
 
-						if (targetSharedMaterial) {
-							orgTexture = r.sharedMaterial.mainTexture;
-							r.sharedMaterial.mainTexture = currentTextureEntry.rawImage.texture;
-						} else {
-							orgTexture = r.material.mainTexture;
-							r.material.mainTexture = currentTextureEntry.rawImage.texture;
+						Material mat = targetSharedMaterial ? r.sharedMaterial : r.material;
+						if (!orgTextureMap.ContainsKey (mat)) {
+							EditedTexture et = pointedRenderer.GetComponent<EditedTexture> ();
+							if (et) {
+								orgTextureMap [mat] = et.orgTexture;
+							} else {
+								orgTextureMap [mat] = mat.mainTexture;
+							}
 						}
+						currentTextureEntry.SetTextureTo (mat, orgTextureMap [mat]);
+
 					}
 				} else if (pointedRenderer != null) {
-
-					if (targetSharedMaterial) {
-						pointedRenderer.sharedMaterial.mainTexture = orgTexture;
-					} else {
-						pointedRenderer.material.mainTexture = orgTexture;
-					}
-					pointedRenderer = null;
+					ResetTexture ();
+					return;
 				}
 			}
-
 			if (Input.GetMouseButtonDown (0)) {
 				if (pointedRenderer != null) {
 					applying = true;
-					dialog.Show("Apply this texture?", "Are you applying this texture?",
-						"Apply", "Cancel", (x)=>{
-							if(x){
-								print("Approve");
-								EditedTexture et = pointedRenderer.gameObject.AddComponent<EditedTexture>();
-								if (targetSharedMaterial) {
-									et.Set(pointedRenderer.sharedMaterial.mainTexture);
-								}else{
-									et.Set(pointedRenderer.material.mainTexture);
-								}
-								pointedRenderer = null;
+					dialog.Show ("Apply this texture?", "Are you applying this texture?",
+						"Apply", "Cancel", (x) => {
+						if (x) {
+							EditedTexture et = AddEditedTextureTo(pointedRenderer.gameObject);
+							ResetTexture();
+							et.Set (currentTextureEntry);
+							pointedRenderer = null;
 
-								applying = false;
-							} else {
-								print("Cancel");
-								applying = false;
-							}
-						});
+							applying = false;
+						} else {
+							applying = false;
+						}
+					});
 				}
 			}
-			
+		}
+
+		private EditedTexture AddEditedTextureTo(GameObject go){
+			EditedTexture[] ets = go.GetComponents<EditedTexture> ();
+			foreach (var e in ets) {
+				e.Restore ();
+				Destroy (e);
+			}
+			EditedTexture et = go.AddComponent<EditedTexture> ();
+
+			return et;
 		}
 
 		void UnApplying(){
@@ -166,12 +180,12 @@ namespace Shiva.TextureEditor {
 				print ("Created : " + fi.FullName);
 			}
 
-			//			dataSaveLoad.AddHandler(DataLoadCallback, typeof(SavedCamera));
+
 			UpdateTextures ();
 		}
 
 		public void UpdateTextures(){
-
+			
 			string folder = dataSaveLoad.GetFolderPath (textureFolder);
 			DirectoryInfo di = new DirectoryInfo (folder);
 
@@ -188,25 +202,30 @@ namespace Shiva.TextureEditor {
 			foreach (TextureEntry te in entries) {
 				Destroy (te.gameObject);
 			}
-//
+
+			//creating blank texture entry for reseting
+			{
+				GameObject pip = GameObject.Instantiate (texturePrefab);
+				pip.transform.SetParent (scrollContent.transform, false);
+				TextureEntry te = pip.GetComponentInChildren<TextureEntry> (true);
+				te.TexturePath = null;
+
+				te.GetComponentInChildren<Button> ().onClick.AddListener (() => {
+					TextureSelected (te);
+				});
+			}
+
+			//creating each texture entries
 			foreach (string f in files) {
 
 				GameObject pip = GameObject.Instantiate (texturePrefab);
 				pip.transform.SetParent (scrollContent.transform, false);
-				TextureEntry te = pip.GetComponentInChildren<TextureEntry> ();
+				TextureEntry te = pip.GetComponentInChildren<TextureEntry> (true);
 				te.TexturePath = f;
 
 				te.GetComponentInChildren<Button>().onClick.AddListener (() => {
 					TextureSelected(te);
 				});
-
-
-//				PlaceItemEntry pie = pip.GetComponent<PlaceItemEntry> ();
-//				pie.PlaceItem = pi;
-
-//				pie.itemButton.onClick.AddListener (() => {
-//					CreatePlaceItemInstance (pie.PlaceItem);
-//				});
 			}
 		}
 
@@ -216,38 +235,71 @@ namespace Shiva.TextureEditor {
 			}
 			currentTextureEntry = te;
 			currentTextureEntry.GetComponentInChildren<Text> ().text = "selected";
+		}
 
+		public void DeleteTexture(){
+			if (currentTextureEntry != null && currentTextureEntry.TexturePath != null) {
+				new FileInfo (currentTextureEntry.TexturePath).Delete ();
+				Destroy (currentTextureEntry.gameObject);
+			}
+		}
+
+
+
+
+		[System.Serializable] 
+		public class SavedEditedTexture
+		{
+			public string path;
+			public string textureFilePath;
 		}
 
 		public void DataLoadCallback(object o){
 
-//			SavedCamera sc = o as SavedCamera;
-//
-//			if (sc.cameraName == cameraSwitcher.CurrentActive.c.name) {
-//				cameraSwitcher.CurrentActive.transform.position = sc.position;
-//				cameraSwitcher.CurrentActive.transform.rotation = sc.rotation;
-//				cameraSwitcher.CurrentActive.transform.localScale = sc.localScale;
-//			}
-		}
+			TextureEntry[] entries = scrollContent.GetComponentsInChildren<TextureEntry> ();
+			Dictionary<string, TextureEntry> dict = new Dictionary<string, TextureEntry> ();
+			foreach (var entry in entries) {
+				if (entry.TexturePath == null)
+					continue;
+				dict [entry.TexturePath] = entry;
+			}
 
+			EditedTexture[] ets = FindObjectsOfType<EditedTexture> ();
+			foreach (EditedTexture et in ets) {
+				et.Restore ();
+			}
 
+			SavedEditedTexture[] sets = o as SavedEditedTexture[];
+			foreach (var s in sets) {
+				if(s.textureFilePath != null && dict.ContainsKey(s.textureFilePath)){
+					GameObject go = GameObject.Find (s.path);
+					EditedTexture et = AddEditedTextureTo (go);
+					et.Set (dict [s.textureFilePath]);
+				}
+			}
 
-		public void TakeScreenshot(){
-			
+			orgTextureMap.Clear ();
 		}
 
 		public void ShowSaveUI(){
-//			SavedCamera sc = new SavedCamera ();
-//			sc.cameraName = cameraSwitcher.CurrentActive.c.name;
-//			sc.position = cameraSwitcher.CurrentActive.transform.position;
-//			sc.rotation = cameraSwitcher.CurrentActive.transform.rotation;
-//			sc.localScale = cameraSwitcher.CurrentActive.transform.localScale;
-//
-//			dataSaveLoad.ShowSaveDialog (sc, folderName);
+
+			List<SavedEditedTexture> list = new List<SavedEditedTexture> ();
+
+			EditedTexture[] ets = FindObjectsOfType<EditedTexture> ();
+			foreach (EditedTexture et in ets) {
+				SavedEditedTexture s = new SavedEditedTexture ();
+				s.path = et.gameObject.GetFullPath ();
+				s.textureFilePath = et.textureFilePath;
+				list.Add (s);
+			}
+
+			dataSaveLoad.SetHandler(DataLoadCallback, typeof(SavedEditedTexture[]));
+			dataSaveLoad.ShowSaveDialog (list.ToArray(), folderName);
 		}
 
 		public void ShowLoadUI(){
-			dataSaveLoad.ShowLoadDialog (typeof(SavedCamera), folderName);
+			dataSaveLoad.SetHandler(DataLoadCallback, typeof(SavedEditedTexture[]));
+			dataSaveLoad.ShowLoadDialog (typeof(SavedEditedTexture[]), folderName);
 		}
 
 

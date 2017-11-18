@@ -4,42 +4,66 @@ using UnityEngine;
 
 namespace Shiva.TextureEditor {
 	public class EditedTexture : MonoBehaviour {
+		private bool initFlag = false;
 
-		private  Texture orgTexture;
-
+		public Texture orgTexture;
 		public Texture editedTexture;
-	//	private string textureFilePath;
 
-		private TextureEditorManager master;
+		public string textureFilePath;
+
 
 		// Use this for initialization
 		void Start () {
-			master = FindObjectOfType<TextureEditorManager> ();
 			
+			Init ();
+		}
+
+		public void Restore(){
+			TextureEditorManager master = FindObjectOfType<TextureEditorManager> ();
+
+			MeshRenderer mr = GetComponent<MeshRenderer> ();
+			Material mat = master.targetSharedMaterial ? mr.sharedMaterial : mr.material;
+
+			mat.mainTexture = orgTexture;
+			textureFilePath = null;
+			editedTexture = null;
+		}
+
+		private void Init(){
+			if (initFlag) {
+				return;
+			}
+			initFlag = true;
+
+			TextureEditorManager master = FindObjectOfType<TextureEditorManager> ();
+
 			MeshRenderer mr = GetComponent<MeshRenderer> ();
 			if (master.targetSharedMaterial) {
 				orgTexture = mr.sharedMaterial.mainTexture;
 			} else {
 				orgTexture = mr.material.mainTexture;
 			}
+
 		}
 
-
-		// Update is called once per frame
-		void Update () {
-			
-		}
-
-		public void Set(Texture tex){
-			
-			MeshRenderer mr = GetComponent<MeshRenderer> ();
-
-			editedTexture = tex;
-			if (master.targetSharedMaterial) {
-				mr.sharedMaterial.mainTexture = editedTexture;
+		public void SetTextureTo(Material mat){
+			if (editedTexture != null) {
+				mat.mainTexture = editedTexture;
 			} else {
-				mr.material.mainTexture = editedTexture;
+				mat.mainTexture = orgTexture;
 			}
+		}
+
+		public void Set(TextureEntry entry){
+			Init ();
+
+			TextureEditorManager master = FindObjectOfType<TextureEditorManager> ();
+
+			MeshRenderer mr = GetComponent<MeshRenderer> ();
+			entry.SetTextureTo (master.targetSharedMaterial ? mr.sharedMaterial : mr.material, orgTexture);
+
+			textureFilePath = entry.TexturePath;
+			editedTexture = entry.rawImage.texture;
 		}
 
 	}
